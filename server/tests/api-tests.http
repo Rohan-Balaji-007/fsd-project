@@ -1,0 +1,350 @@
+### ==============================================================================
+### EVENT TEAM FORMATION PLATFORM - REST CLIENT HTTP SPECIFICATION
+### File: /server/tests/api-tests.http
+### Description: Covers every endpoint and business rule defined in PROJECT_CONTEXT.md
+### ==============================================================================
+
+@baseUrl = http://localhost:5000/api
+
+# Replace these tokens with actual Supabase JWTs from your test accounts
+@tokenStudent1 = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.STUDENT_ONE_TOKEN
+@tokenStudent2 = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.STUDENT_TWO_TOKEN
+@tokenLeader   = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.LEADER_TOKEN
+@tokenAdmin    = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ADMIN_TOKEN
+
+@sampleEventId = e1000000-0000-0000-0000-000000000001
+@sampleTeamId  = 00000000-0000-0000-0000-000000000001
+@sampleRequestId = 00000000-0000-0000-0000-000000000002
+
+### ------------------------------------------------------------------------------
+### 1. HEALTH & ERROR HANDLING TESTS
+### ------------------------------------------------------------------------------
+
+# 1.1 Health check (Should return 200 with status: healthy)
+GET {{baseUrl}}/health
+Accept: application/json
+
+###
+
+# 1.2 Route Not Found (Should return 404 with consistent { success: false, error })
+GET {{baseUrl}}/unknown-route
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 2. PROFILE ENDPOINTS
+### ------------------------------------------------------------------------------
+
+# 2.1 Get My Profile (Requires Auth)
+GET {{baseUrl}}/profile/me
+Authorization: Bearer {{tokenStudent1}}
+Accept: application/json
+
+###
+
+# 2.2 Update My Profile
+PUT {{baseUrl}}/profile/me
+Authorization: Bearer {{tokenStudent1}}
+Content-Type: application/json
+
+{
+  "full_name": "Alex Mercer",
+  "department": "Computer Science",
+  "academic_year": "3rd Year",
+  "skills": ["Python", "React", "SQL", "FastAPI"],
+  "interests": ["Generative AI", "Web3", "Distributed Systems"],
+  "experience": "Built campus hackathon portal and published NLP paper."
+}
+
+###
+
+# 2.3 Get Profile by ID
+GET {{baseUrl}}/profiles/00000000-0000-0000-0000-000000000001
+Authorization: Bearer {{tokenStudent1}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 3. EVENT ENDPOINTS & ADMIN RULES
+### ------------------------------------------------------------------------------
+
+# 3.1 List Events (Public discovery with search, category, pagination)
+GET {{baseUrl}}/events?category=hackathon&page=1&limit=5
+Accept: application/json
+
+###
+
+# 3.2 Get Event by ID
+GET {{baseUrl}}/events/{{sampleEventId}}
+Accept: application/json
+
+###
+
+# 3.3 Create Event by Student (BUSINESS RULE 8: Must FAIL with 403 Forbidden)
+POST {{baseUrl}}/events
+Authorization: Bearer {{tokenStudent1}}
+Content-Type: application/json
+
+{
+  "title": "Unauthorized Student Event",
+  "description": "This event creation should be rejected because student is not admin.",
+  "category": "hackathon",
+  "start_date": "2026-11-01T09:00:00Z",
+  "end_date": "2026-11-02T18:00:00Z",
+  "venue": "Campus Amphitheatre"
+}
+
+###
+
+# 3.4 Create Event by Admin (BUSINESS RULE 8: Must SUCCEED with 201)
+POST {{baseUrl}}/events
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "title": "Quantum Leap Hack 2026",
+  "description": "Annual collegiate quantum algorithms and high-performance computing sprint.",
+  "category": "hackathon",
+  "start_date": "2026-11-15T10:00:00Z",
+  "end_date": "2026-11-17T18:00:00Z",
+  "venue": "Science Block Atrium",
+  "registration_url": "https://quantumleap.college.edu",
+  "registration_deadline": "2026-11-10T23:59:59Z"
+}
+
+###
+
+# 3.5 Update Event by Admin
+PUT {{baseUrl}}/events/{{sampleEventId}}
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "description": "Updated event description with enhanced mentor tracks and updated prize pool."
+}
+
+###
+
+# 3.6 Delete Event by Admin
+DELETE {{baseUrl}}/events/{{sampleEventId}}
+Authorization: Bearer {{tokenAdmin}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 4. TEAM ENDPOINTS & BUSINESS RULES
+### ------------------------------------------------------------------------------
+
+# 4.1 Create Team without Auth (BUSINESS RULE 1: Must FAIL with 401 Unauthorized)
+POST {{baseUrl}}/teams
+Content-Type: application/json
+
+{
+  "event_id": "{{sampleEventId}}",
+  "name": "Anonymous Team",
+  "max_members": 4
+}
+
+###
+
+# 4.2 Create Team with Auth (BUSINESS RULE 2: Creator becomes leader & team_member)
+POST {{baseUrl}}/teams
+Authorization: Bearer {{tokenLeader}}
+Content-Type: application/json
+
+{
+  "event_id": "{{sampleEventId}}",
+  "name": "NeuroCraft AI",
+  "description": "Building edge LLM inference engine for student devices.",
+  "required_skills": ["Python", "PyTorch", "React", "Rust"],
+  "max_members": 3
+}
+
+###
+
+# 4.3 List Teams with Filters (skills, search, department, only_open)
+GET {{baseUrl}}/teams?event_id={{sampleEventId}}&skills=Python,React&only_open=true&page=1&limit=10
+Accept: application/json
+
+###
+
+# 4.4 Get Team by ID (Enriched with members, leader, pending requests count for leader)
+GET {{baseUrl}}/teams/{{sampleTeamId}}
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+###
+
+# 4.5 Update Team by Non-Leader (BUSINESS RULE 3: Must FAIL with 403 Forbidden)
+PUT {{baseUrl}}/teams/{{sampleTeamId}}
+Authorization: Bearer {{tokenStudent1}}
+Content-Type: application/json
+
+{
+  "name": "Hijacked Team Name"
+}
+
+###
+
+# 4.6 Update Team by Leader (BUSINESS RULE 3: Succeeds and notifies members)
+PUT {{baseUrl}}/teams/{{sampleTeamId}}
+Authorization: Bearer {{tokenLeader}}
+Content-Type: application/json
+
+{
+  "description": "Updated team roadmap. Looking for frontend UI engineer specializing in React & Tailwind.",
+  "required_skills": ["Python", "React", "TailwindCSS"]
+}
+
+###
+
+# 4.7 Get My Teams (With my_role: leader/member)
+GET {{baseUrl}}/my-teams
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 5. JOIN REQUESTS & ATOMIC CAPACITY RULES
+### ------------------------------------------------------------------------------
+
+# 5.1 Leader Requesting to Join Their Own Team (BUSINESS RULE 7: Must FAIL with 400)
+POST {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenLeader}}
+Content-Type: application/json
+
+{
+  "message": "I am the leader trying to join my own team."
+}
+
+###
+
+# 5.2 Student 1 sends Join Request (Succeeds 201, notifies Leader)
+POST {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenStudent1}}
+Content-Type: application/json
+
+{
+  "message": "Hey! I know Python and React and have built AI apps. Would love to join NeuroCraft AI!"
+}
+
+###
+
+# 5.3 Student 1 sends DUPLICATE Pending Request (BUSINESS RULE 4: Must FAIL with 409)
+POST {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenStudent1}}
+Content-Type: application/json
+
+{
+  "message": "Duplicate request attempt while previous request is still pending."
+}
+
+###
+
+# 5.4 Non-Leader viewing Team Join Requests (BUSINESS RULE 3: Must FAIL with 403)
+GET {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenStudent2}}
+Accept: application/json
+
+###
+
+# 5.5 Leader viewing Team Join Requests (BUSINESS RULE 3: Succeeds with applicant profiles)
+GET {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+###
+
+# 5.6 View My Join Requests
+GET {{baseUrl}}/requests/mine
+Authorization: Bearer {{tokenStudent1}}
+Accept: application/json
+
+###
+
+# 5.7 Non-Leader accepting Join Request (BUSINESS RULE 3: Must FAIL with 403 Forbidden)
+PATCH {{baseUrl}}/requests/{{sampleRequestId}}
+Authorization: Bearer {{tokenStudent2}}
+Content-Type: application/json
+
+{
+  "action": "accept"
+}
+
+###
+
+# 5.8 Leader accepting Join Request (BUSINESS RULES 5 & 6: Atomic Postgres row-locking RPC)
+# Adds member, marks request accepted, updates status to 'full' if capacity reached, notifies student
+PATCH {{baseUrl}}/requests/{{sampleRequestId}}
+Authorization: Bearer {{tokenLeader}}
+Content-Type: application/json
+
+{
+  "action": "accept"
+}
+
+###
+
+# 5.9 Requesting team when team is FULL (BUSINESS RULE 5: Must FAIL with 400 Team Full)
+POST {{baseUrl}}/teams/{{sampleTeamId}}/requests
+Authorization: Bearer {{tokenStudent2}}
+Content-Type: application/json
+
+{
+  "message": "Trying to join team that has reached max_members capacity."
+}
+
+###
+
+# 5.10 Student cancels own pending request
+DELETE {{baseUrl}}/requests/{{sampleRequestId}}
+Authorization: Bearer {{tokenStudent1}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 6. TEAM MEMBER REMOVAL & LEAVING RULES
+### ------------------------------------------------------------------------------
+
+# 6.1 Unauthorized User removing a member (Must FAIL with 403 Forbidden)
+DELETE {{baseUrl}}/teams/{{sampleTeamId}}/members/00000000-0000-0000-0000-000000000005
+Authorization: Bearer {{tokenStudent2}}
+Accept: application/json
+
+###
+
+# 6.2 Leader removing a member (Succeeds 200, restores 'open' status if was full, notifies member)
+DELETE {{baseUrl}}/teams/{{sampleTeamId}}/members/00000000-0000-0000-0000-000000000005
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+###
+
+# 6.3 Member leaves voluntarily (Succeeds 200, notifies leader)
+DELETE {{baseUrl}}/teams/{{sampleTeamId}}/members/00000000-0000-0000-0000-000000000006
+Authorization: Bearer {{tokenStudent1}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 7. NOTIFICATION ENDPOINTS
+### ------------------------------------------------------------------------------
+
+# 7.1 Get My Notifications
+GET {{baseUrl}}/notifications
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+###
+
+# 7.2 Mark Single Notification Read
+PATCH {{baseUrl}}/notifications/00000000-0000-0000-0000-000000000010/read
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
+
+###
+
+# 7.3 Mark All Notifications Read
+PATCH {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{tokenLeader}}
+Accept: application/json
